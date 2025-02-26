@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ranked VMs</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        #rankedVMs {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .vm {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Ranked VMs</h1>
+    <div id="rankedVMs">
+        <p>Loading ranked VMs...</p>
+    </div>
+
+    <script>
+        // Function to fetch ranked VMs and update the page
+        const fetchRankedVMs = async () => {
+            try {
+                const response = await fetch('http://localhost:9200/ralba');
+                const data = await response.json();
+
+                if (data.success) {
+                    const rankedVMsDiv = document.getElementById('rankedVMs');
+                    rankedVMsDiv.innerHTML = data.data.data.rankedVMs
+                        .map((vm, index) => `<div class="vm">${index + 1}. ${vm}</div>`)
+                        .join('');
+                } else {
+                    console.error('Failed to fetch ranked VMs:', data);
+                }
+            } catch (error) {
+                console.error('Error fetching ranked VMs:', error);
+            }
+        };
+
+        // Fetch ranked VMs every 5 seconds
+        setInterval(fetchRankedVMs, 5000);
+
+        // Initial fetch
+        fetchRankedVMs();
+    </script>
+</body>
+</html>
