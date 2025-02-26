@@ -55,9 +55,9 @@ const fetchMetric = async (vmIP) => {
     }
 };
 
-const haproxyConfigPath = path.join(__dirname, configFile);
+// const haproxyConfigPath = path.join(__dirname, configFile);
 
-const updateConfigFile = (rankedVMLists) => {
+const updateConfigFile = (rankedVMLists, haproxyConfigPath) => {
     fs.readFile(haproxyConfigPath, 'utf8', (err, data) => {
         if (err) {
             console.error('Error reading haproxy.cfg:', err);
@@ -147,7 +147,7 @@ const fetchAndRankVMs = async () => {
     data["rankedVMs"] = finalResult;
 
     console.log(data);
-    updateConfigFile(finalResult, haproxyConfigPath);
+    updateConfigFile(finalResult, configFile);
 };
 
 setInterval(fetchAndRankVMs, 10000);
