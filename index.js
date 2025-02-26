@@ -3,10 +3,12 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 
-const configFile = 'unused/haproxy.cfg';
+const configFile = '/etc/haproxy/haproxy.cfg';
 
 const cors = require('cors');
 const app = express();
+
+const { exec } = require('child_process');
 
 app.use(cors());
 
@@ -55,8 +57,8 @@ const fetchMetric = async (vmIP) => {
 
 const haproxyConfigPath = path.join(__dirname, configFile);
 
-const updateConfigFile = (rankedVMLists, configPath) => {
-    fs.readFile(configPath, 'utf8', (err, data) => {
+const updateConfigFile = (rankedVMLists) => {
+    fs.readFile(haproxyConfigPath, 'utf8', (err, data) => {
         if (err) {
             console.error('Error reading haproxy.cfg:', err);
             return;
@@ -89,15 +91,29 @@ const updateConfigFile = (rankedVMLists, configPath) => {
     
         const newConfig = newLines.join('\n');
     
-        fs.writeFile(configPath, newConfig, 'utf8', (err) => {
+        fs.writeFile(haproxyConfigPath, newConfig, 'utf8', (err) => {
             if (err) {
                 console.error('Error writing haproxy.cfg:', err);
                 return;
             }
             console.log('haproxy.cfg has been updated successfully.');
+
+            // Gracefully reload HAProxy
+            const reloadCommand = 'haproxy -f /etc/haproxy/haproxy.cfg -sf $(cat /var/run/haproxy.pid)';
+            exec(reloadCommand, (error, stdout, stderr) => {
+                if (error) {
+                    console.error('Error reloading HAProxy:', error.message);
+                    return;
+                }
+                if (stderr) {
+                    console.error('HAProxy reload stderr:', stderr);
+                    return;
+                }
+                console.log('HAProxy reloaded successfully:', stdout);
+            });
         });
     });
-}
+};
 
 const fetchAndRankVMs = async () => {
     const vmResults = await Promise.all(
@@ -127,17 +143,15 @@ const fetchAndRankVMs = async () => {
         .sort((a, b) => a.averageRank - b.averageRank)
         .map(({ vm }) => vm);
     
-    data["rankedVMs"] = finalResult;
     data["vmResults"] = vmResults;
+    data["rankedVMs"] = finalResult;
 
     console.log(data);
     updateConfigFile(finalResult, haproxyConfigPath);
 };
 
-// Fetch and rank VMs every minute
 setInterval(fetchAndRankVMs, 10000);
 
-// Endpoint to serve ranked VMs
 app.get('/ralba', (req, res) => {
     res.json({
         success: true,
@@ -148,8 +162,7 @@ app.get('/ralba', (req, res) => {
     });
 });
 
-// Start the server
 app.listen(9200, () => {
-    console.log(`Server is running on http://localhost:9200`);
-    fetchAndRankVMs(); // Initial fetch
+    console.log(`Run http://localhost:9200`);
+    fetchAndRankVMs();
 });
