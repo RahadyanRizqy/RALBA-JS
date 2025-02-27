@@ -2,3 +2,5 @@ change.js
 node_modules/
 unused/
 .vscode/
+.env
+getenv.js

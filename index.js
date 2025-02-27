@@ -3,7 +3,13 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 
-const configFile = '/etc/haproxy/haproxy.cfg';
+require('dotenv').config();
+
+const haproxyCfgPath = process.env.HAPROXYCFG_PATH;
+const fetchDelay = process.env.FETCH_DELAY;
+const serverPort = process.env.SERVER_PORT;
+const prometheusUrl = process.env.PROMETHEUS_URL_API;
+const nodesIP = process.env.NODES_IP.split(", ");
 
 const cors = require('cors');
 const app = express();
@@ -29,7 +35,7 @@ const fetchMetric = async (vmIP) => {
                 network: (vmIP) => `100*(rate(node_network_receive_bytes_total{instance="${vmIP}",device="eth0"}[1m])+rate(node_network_transmit_bytes_total{instance="${vmIP}",device="eth0"}[1m]))/12500000`
             })
             .map(([metric, query]) =>
-                axios.get('http://192.168.1.2:9090/api/v1/query', { params: { query: query(vmIP) } })
+                axios.get(prometheusUrl, { params: { query: query(vmIP) } })
                     .then(response => (
                         { [metric]: response.data.data.result[0]?.value[1] || null })
                     )
@@ -54,8 +60,6 @@ const fetchMetric = async (vmIP) => {
         };
     }
 };
-
-// const haproxyConfigPath = path.join(__dirname, configFile);
 
 const updateConfigFile = (rankedVMLists, haproxyConfigPath) => {
     fs.readFile(haproxyConfigPath, 'utf8', (err, data) => {
@@ -98,36 +102,30 @@ const updateConfigFile = (rankedVMLists, haproxyConfigPath) => {
             }
             console.log('haproxy.cfg has been updated successfully.');
 
-            // Gracefully reload HAProxy
-            const reloadCommand = 'haproxy -f /etc/haproxy/haproxy.cfg -sf $(cat /var/run/haproxy.pid)';
-            exec(reloadCommand, (error, stdout, stderr) => {
-                if (error) {
-                    console.error('Error reloading HAProxy:', error.message);
-                    return;
-                }
-                if (stderr) {
-                    console.error('HAProxy reload stderr:', stderr);
-                    return;
-                }
-                console.log('HAProxy reloaded successfully:', stdout);
-            });
+            if (process.env.RELOAD == 1) {
+                const reloadCommand = 'haproxy -f /etc/haproxy/haproxy.cfg -sf $(cat /var/run/haproxy.pid)';
+                exec(reloadCommand, (error, stdout, stderr) => {
+                    if (error) {
+                        console.error('Error reloading HAProxy:', error.message);
+                        return;
+                    }
+                    if (stderr) {
+                        console.error('HAProxy reload stderr:', stderr);
+                        return;
+                    }
+                    console.log('HAProxy reloaded successfully:', stdout);
+                });
+            }
         });
     });
 };
 
 const fetchAndRankVMs = async () => {
     const vmResults = await Promise.all(
-        [
-            "10.0.0.201:9100", 
-            "10.0.0.202:9100", 
-            "10.0.0.203:9100", 
-            "10.0.0.204:9100", 
-            "10.0.0.205:9100"
-        ]
-        .map(fetchMetric)
+        nodesIP.map(fetchMetric)
     );
 
-    const finalResult = vmResults
+    const rankedVMs = vmResults
         .map(({ vm }) => ({
             vm,
             averageRank: Object.values(
@@ -144,13 +142,13 @@ const fetchAndRankVMs = async () => {
         .map(({ vm }) => vm);
     
     data["vmResults"] = vmResults;
-    data["rankedVMs"] = finalResult;
+    data["rankedVMs"] = rankedVMs;
 
     console.log(data);
-    updateConfigFile(finalResult, configFile);
+    updateConfigFile(rankedVMs, haproxyCfgPath);
 };
 
-setInterval(fetchAndRankVMs, 10000);
+setInterval(fetchAndRankVMs, fetchDelay);
 
 app.get('/ralba', (req, res) => {
     res.json({
@@ -162,7 +160,9 @@ app.get('/ralba', (req, res) => {
     });
 });
 
-app.listen(9200, () => {
-    console.log(`Run http://localhost:9200`);
+
+
+app.listen(serverPort, () => {
+    console.log(`Run http://0.0.0.0:${serverPort}`);
     fetchAndRankVMs();
 });
